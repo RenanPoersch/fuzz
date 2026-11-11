@@ -1,8 +1,9 @@
-name: CI
+name: CI e GitHub Pages
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,4 +33,31 @@ jobs:
         run: npm test
 
       - name: Compilar o app
-        run: npm run build
+        run: npm run build -- --base-href /fuzz/
+
+      - name: Preparar arquivos para o Pages
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/browser
+
+  deploy:
+    name: Publicar no GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Publicar o app
+        id: deployment
+        uses: actions/deploy-pages@v4
