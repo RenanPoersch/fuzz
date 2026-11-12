@@ -1,41 +1,84 @@
-import { Component } from '@angular/core';
+import { Component, computed, inject, linkedSignal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatCardModule } from '@angular/material/card';
-import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSliderModule } from '@angular/material/slider';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { FOCUS, UNIVERSE, SET_LABELS, SHOULDERS, membership, tall, definitionsFor } from './fuzzy-engine';
+import { FOCUS, SET_LABELS, SHOULDERS, membership, tall, definitionsFor, mediumParameters } from './fuzzy-engine';
 import type { Shape, HeightSet } from './fuzzy-engine';
+import { TrainingService } from './training.service';
+import { MembershipCardComponent } from './membership-card.component';
+import { MathEquationComponent, type EquationTerm } from './math-equation.component';
+
+function fraction(minuend: number, subtrahend: number, denominator: number): EquationTerm {
+  return {
+    kind: 'fraction',
+    numerator: [minuend, subtrahend],
+    denominator,
+  };
+}
 
 @Component({
-  selector:'app-root',standalone:true,
-  imports:[DecimalPipe,FormsModule,MatCardModule,MatExpansionModule,MatSliderModule,MatButtonToggleModule],
+  selector:'app-demonstration',standalone:true,
+  imports: [
+    DecimalPipe,
+    FormsModule,
+    MatSliderModule,
+    MatButtonToggleModule,
+    MembershipCardComponent,
+    MathEquationComponent,
+  ],
   templateUrl:'./app.component.html'
 })
 export class AppComponent {
+  protected readonly training = inject(TrainingService);
+  private readonly medium = computed(() => {
+    return mediumParameters(this.training.model());
+  });
+
   height=FOCUS;
-  selectedSet:HeightSet='medium';
-  get setLabel(){return SET_LABELS[this.selectedSet];}
-  get definitions(){return definitionsFor(this.selectedSet);}
-  value(shape:Shape,x=this.height){return membership(shape,x,this.selectedSet);}
+  protected readonly selectedSet = linkedSignal({
+    source: this.training.model,
+    computation: (): HeightSet => {
+      return 'medium';
+    },
+  });
+  get setLabel() {
+    return SET_LABELS[this.selectedSet()];
+  }
+  get definitions() {
+    return definitionsFor(this.selectedSet(), this.training.model());
+  }
+  value(shape: Shape, height = this.height): number {
+    return membership(shape, height, this.selectedSet(), this.training.model());
+  }
   get tallFocus(){return tall(this.height);}
   get markerX(){return this.mapX(this.height);}
   private decimal(value:number,digits=2){
     return value.toLocaleString('pt-BR',{minimumFractionDigits:digits,maximumFractionDigits:digits});
   }
+  private modelValue(value: number): string {
+    return value.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    });
+  }
   formatDegree(value:number){return value>0&&value<.0005?'< 0,001':this.decimal(value,3);}
   private centimetres(value:number){return this.decimal(Math.abs(value)*100,0);}
   get reading(){
-    const h=this.height,label=this.decimal(h),set=this.setLabel;
+    const h=this.height,label=this.modelValue(h),set=this.setLabel;
     const results=this.definitions.map(d=>({...d,value:this.value(d.id)}));
     const full=results.filter(d=>d.value>=1-1e-10);
     if(full.length===3){
-      if(this.selectedSet==='medium')return {
-        title:`As três funções consideram uma pessoa de ${label} m plenamente compatível com “estatura média”.`,
-        explanation:'A medida coincide com a referência central de 1,75 m da triangular e da gaussiana, e também está na faixa de 1,65 a 1,85 m aceita integralmente pela trapezoidal. Por isso, todas atribuem grau 1, mesmo usando formas diferentes.'
-      };
-      const tallSet=this.selectedSet==='tall';
+      if (this.selectedSet() === 'medium') {
+        const [, plateauStart, plateauEnd] = this.medium().trapezoidal;
+        const center = this.training.model().center;
+
+        return {
+          title: `As três funções consideram uma pessoa de ${label} m plenamente compatível com “estatura média”.`,
+          explanation: `A medida coincide com o centro de ${this.modelValue(center)} m da triangular e da gaussiana e está na faixa de ${this.modelValue(plateauStart)} a ${this.modelValue(plateauEnd)} m da trapezoidal. As três funções atribuem grau 1.`,
+        };
+      }
+      const tallSet=this.selectedSet()==='tall';
       const edge=tallSet?1.95:1.55;
       return {
         title:`As três funções consideram uma pessoa de ${label} m plenamente ${set}.`,
@@ -52,10 +95,19 @@ export class AppComponent {
       };
     }
     const linearZero=results.filter(d=>d.id!=='gaussian').every(d=>d.value===0);
-    if(linearZero)return {
-      title:`A triangular e a trapezoidal não incluem ${label} m no conjunto “${set}”.`,
-      explanation:`As duas atribuem grau 0 porque a medida está fora da região aceita por suas definições. A gaussiana ainda atribui ${this.formatDegree(this.value('gaussian'))}: sua cauda diminui gradualmente e permanece positiva. Portanto, o resultado gaussiano residual não equivale à aceitação plena da descrição.`
-    };
+    if (linearZero) {
+      const gaussianDegree = this.value('gaussian');
+      if (gaussianDegree === 0) {
+        return {
+          title: `As três funções retornam grau 0 para ${label} m no conjunto “${set}”.`,
+          explanation: 'A medida está fora da faixa de pertinência positiva da triangular e da trapezoidal. Na gaussiana, a distância é tão grande que o valor calculado também chega a zero na precisão do aplicativo.',
+        };
+      }
+      return {
+        title: `A triangular e a trapezoidal atribuem grau 0 a ${label} m no conjunto “${set}”.`,
+        explanation: `A medida está fora da faixa de pertinência positiva dessas duas curvas. A cauda da gaussiana ainda atribui grau ${this.formatDegree(gaussianDegree)}.`,
+      };
+    }
     const ordered=[...results].sort((a,b)=>b.value-a.value);
     const top=ordered[0];
     return {
@@ -63,35 +115,74 @@ export class AppComponent {
       explanation:`Nenhuma função considera essa altura plenamente ${set}. A ${top.name.toLowerCase()} atribui ${this.formatDegree(top.value)}, enquanto a ${ordered[1].name.toLowerCase()} atribui ${this.formatDegree(ordered[1].value)} e a ${ordered[2].name.toLowerCase()} atribui ${this.formatDegree(ordered[2].value)}. A comparação mostra quanto cada definição aceita essa mesma altura como “${set}”.`
     };
   }
-  get tallCalculation(){return `(${this.decimal(this.height)} − 1,60) / 0,30`;}
-  calculation(shape:Shape){
-    const h=this.height,label=this.decimal(h);
-    if(this.selectedSet!=='medium'){
-      const model=SHOULDERS[this.selectedSet],left=this.selectedSet==='short';
-      if(shape==='gaussian')return (left?h<=model.center:h>=model.center)
-        ?`h ${left?'≤':'≥'} ${this.decimal(model.center)} m: grau 1`
-        :`exp(−(${label} − ${this.decimal(model.center)})² / (2 × 0,10²))`;
-      const [a,b]=model[shape];
-      if(h<=a)return `h ≤ ${this.decimal(a)} m: grau ${left?'1':'0'}`;
-      if(h>=b)return `h ≥ ${this.decimal(b)} m: grau ${left?'0':'1'}`;
-      return `${left?'('+this.decimal(b)+' − '+label+')':'('+label+' − '+this.decimal(a)+')'} / ${this.decimal(b-a)}`;
+  get tallCalculation(): EquationTerm | null {
+    if (this.height > 1.60 && this.height < 1.90) {
+      return fraction(this.height, 1.60, 0.30);
     }
-    if(shape==='gaussian')return `exp(−(${label} − 1,75)² / (2 × 0,10²))`;
-    if(h<=1.55||h>=1.95)return 'Nos pés ou fora do suporte: grau 0';
-    if(shape==='triangular')return h<=1.75?`(${label} − 1,55) / 0,20`:`(1,95 − ${label}) / 0,20`;
-    if(h<1.65)return `(${label} − 1,55) / 0,10`;
-    if(h<=1.85)return `${label} está no platô [1,65; 1,85]`;
-    return `(1,95 − ${label}) / 0,10`;
+    return null;
+  }
+
+  calculation(shape: Shape): string | EquationTerm {
+    const height = this.height;
+    const label = this.modelValue(height);
+    const selectedSet = this.selectedSet();
+    if (selectedSet !== 'medium') {
+      const model = SHOULDERS[selectedSet];
+      const short = selectedSet === 'short';
+      if (shape === 'gaussian') {
+        if (short ? height <= model.center : height >= model.center) {
+          return 'Altura na faixa de grau 1';
+        }
+        return {
+          kind: 'gaussian',
+          height,
+          center: model.center,
+          sigma: 0.10,
+        };
+      }
+      const [a, b] = model[shape];
+      if (height <= a || height >= b) {
+        return this.value(shape) === 1 ? 'Altura na faixa de grau 1' : 'Altura na faixa de grau 0';
+      }
+      return short ? fraction(b, height, b - a) : fraction(height, a, b - a);
+    }
+    if (shape === 'gaussian') {
+      const [center, sigma] = this.medium().gaussian;
+      return {
+        kind: 'gaussian',
+        height,
+        center,
+        sigma,
+      };
+    }
+
+    const [start, firstPeak, nextPoint, trapezoidEnd] = this.medium()[shape];
+    const end = trapezoidEnd ?? nextPoint;
+    if (this.value(shape) === 1) {
+      if (shape === 'trapezoidal') {
+        return `${label} está na faixa de ${this.modelValue(firstPeak)} a ${this.modelValue(nextPoint)} m`;
+      }
+      return `${label} coincide com o pico de ${this.modelValue(firstPeak)} m`;
+    }
+    if (height <= start || height >= end) {
+      return 'Grau 0 no limite ou fora do suporte';
+    }
+    if (height < firstPeak) {
+      return fraction(height, start, firstPeak - start);
+    }
+    const descendingPeak = shape === 'triangular' ? firstPeak : nextPoint;
+    return fraction(end, height, end - descendingPeak);
   }
   interpretation(shape:Shape){
-    const h=this.height,label=this.decimal(h),value=this.value(shape);
+    const h=this.height,label=this.modelValue(h),value=this.value(shape);
     const meaning=value>=1-1e-10
       ?`Uma pessoa de ${label} m satisfaz plenamente a descrição “${this.setLabel}” nesta função.`
       :value===0
         ?`Uma pessoa de ${label} m não pertence ao conjunto “${this.setLabel}” nesta função.`
         :`Uma pessoa de ${label} m recebe grau ${this.formatDegree(value)} de pertencimento a “${this.setLabel}” nesta função.`;
-    if(this.selectedSet!=='medium'){
-      const model=SHOULDERS[this.selectedSet],left=this.selectedSet==='short';
+    const selectedSet = this.selectedSet();
+    if(selectedSet!=='medium'){
+      const model=SHOULDERS[selectedSet],left=selectedSet==='short';
       if(shape==='gaussian'){
         if(left?h<=model.center:h>=model.center)return `${meaning} O grau máximo começa em ${this.decimal(model.center)} m${left?' para baixo':' para cima'}; a medida selecionada está ${this.centimetres(h-model.center)} cm ${left?'abaixo':'acima'} desse marco.`;
         return `${meaning} A medida está ${this.centimetres(h-model.center)} cm ${left?'acima':'abaixo'} de ${this.decimal(model.center)} m, onde começaria o pertencimento pleno. A distância em relação a esse marco, com largura de 10 cm, explica o grau calculado.`;
@@ -107,30 +198,64 @@ export class AppComponent {
         ?`${meaning} Faltam ${this.centimetres(b-h)} cm para atingir ${this.decimal(b)} m, onde o pertencimento zera. Essa distância corresponde a ${this.centimetres(b-h)} dos ${this.centimetres(b-a)} cm da transição, resultando no grau ${this.formatDegree(value)}.`
         :`${meaning} A medida avançou ${this.centimetres(h-a)} dos ${this.centimetres(b-a)} cm entre ${this.decimal(a)} m e ${this.decimal(b)} m. Por isso, ainda não atende integralmente à descrição “alta”.`;
     }
-    if(shape==='gaussian'){
-      if(Math.abs(h-1.75)<1e-10)return `${meaning} Sua medida coincide com 1,75 m, a referência central de estatura média adotada por essa definição.`;
-      return `${meaning} A medida está ${this.centimetres(h-1.75)} cm ${h<1.75?'abaixo':'acima'} da referência de 1,75 m. Quanto maior esse afastamento em relação à largura de 10 cm, menor a compatibilidade com “média”.`;
+    const center = this.training.model().center;
+    if (shape === 'gaussian') {
+      const sigma = this.training.model().widths.gaussian;
+      if (Math.abs(h - center) < 1e-10) {
+        return `${meaning} A medida coincide com o centro de ${this.modelValue(center)} m.`;
+      }
+
+      return `${meaning} A medida está a ${this.modelValue(Math.abs(h - center) * 100)} cm do centro de ${this.modelValue(center)} m. A pertinência cai suavemente conforme a distância aumenta. O parâmetro σ é de ${this.centimetres(sigma)} cm.`;
     }
-    if(h<=1.55||h>=1.95){
-      const edge=h<=1.55?1.55:1.95;
-      return `${meaning} A região com grau positivo vai de 1,55 a 1,95 m, sem incluir os extremos. A medida está ${this.centimetres(h-edge)} cm ${h<=1.55?'abaixo':'acima'} do limite de ${this.decimal(edge)} m.`;
+
+    const [start, firstPeak, nextPoint, trapezoidEnd] = this.medium()[shape];
+    const end = trapezoidEnd ?? nextPoint;
+    if (value === 0) {
+      return `${meaning} Nesta curva, o grau é positivo somente entre ${this.modelValue(start)} e ${this.modelValue(end)} m.`;
     }
-    if(shape==='triangular'){
-      if(Math.abs(h-1.75)<1e-10)return `${meaning} Sua medida coincide com 1,75 m, a única altura que essa triangular considera plenamente média.`;
-      return `${meaning} A medida se afasta ${this.centimetres(h-1.75)} cm da referência de 1,75 m. A triangular perde todo o pertencimento ao se afastar 20 cm dessa referência; nessa posição, o grau restante é ${this.formatDegree(value)}.`;
+    if (shape === 'triangular') {
+      if (Math.abs(h - center) < 1e-10) {
+        return `${meaning} A medida coincide com o pico de ${this.modelValue(center)} m.`;
+      }
+
+      return `${meaning} A medida está a ${this.modelValue(Math.abs(h - center) * 100)} cm do pico de ${this.modelValue(center)} m. A pertinência diminui em linha reta até chegar a zero a ${this.centimetres(this.training.model().widths.triangular)} cm do pico.`;
     }
-    if(h>=1.65&&h<=1.85)return `${meaning} A definição aceita integralmente todas as alturas de 1,65 a 1,85 m, e ${label} m está dentro dessa faixa.`;
-    const edge=h<1.65?1.65:1.85;
-    return `${meaning} A medida está ${this.centimetres(h-edge)} cm ${h<edge?'abaixo':'acima'} da faixa de aceitação plena, de 1,65 a 1,85 m. Nessa transição de 10 cm até o grau zero, o pertencimento restante é ${this.formatDegree(value)}.`;
+    const plateau = `de ${this.modelValue(firstPeak)} a ${this.modelValue(nextPoint)} m`;
+    if (value === 1) {
+      return `${meaning} A medida está dentro da faixa de grau 1, ${plateau}.`;
+    }
+
+    const edge = h < firstPeak ? firstPeak : nextPoint;
+    return `${meaning} A medida está a ${this.modelValue(Math.abs(h - edge) * 100)} cm da faixa de grau 1, ${plateau}. Nesse trecho, a pertinência diminui em linha reta em direção ao limite.`;
   }
-  mapX(height:number){return 35+(height-UNIVERSE[0])*350/(UNIVERSE[1]-UNIVERSE[0]);}
-  private path(fn:(h:number)=>number){
-    return Array.from({length:141},(_,i)=>{
-      const h=UNIVERSE[0]+i*.005;
-      return `${i?'L':'M'}${this.mapX(h)},${170-fn(h)*140}`;
+  mapX(height: number): number {
+    const { min, max } = this.training.heightScale();
+    return 35 + ((height - min) / (max - min)) * 350;
+  }
+  private path(fn: (height: number) => number, breakpoints: readonly number[] = []): string {
+    const { min, max } = this.training.heightScale();
+    const heights = Array.from({ length: 141 }, (_, index) => {
+      return min + (index / 140) * (max - min);
+    });
+    heights.push(...breakpoints.filter((height) => {
+      return height > min && height < max;
+    }));
+    heights.sort((first, second) => first - second);
+
+    return heights.map((height, index) => {
+      const command = index === 0 ? 'M' : 'L';
+      return `${command}${this.mapX(height)},${170 - fn(height) * 140}`;
     }).join(' ');
   }
-  curve(shape:Shape){return this.path(h=>this.value(shape,h));}
-  area(shape:Shape){return this.curve(shape)+' L385,170 L35,170 Z';}
-  readonly tallCurve=this.path(tall);
+  curve(shape: Shape): string {
+    let breakpoints: readonly number[] = [];
+    if (this.selectedSet() === 'medium') {
+      breakpoints = shape === 'gaussian' ? [this.medium().gaussian[0]] : this.medium()[shape];
+    }
+
+    return this.path((height) => this.value(shape, height), breakpoints);
+  }
+  protected readonly tallCurve = computed(() => {
+    return this.path(tall, [1.60, 1.90]);
+  });
 }

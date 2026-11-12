@@ -1,4 +1,5 @@
 <main>
+  @let scale = training.heightScale();
   <header><h1>Funções de pertinência na lógica fuzzy</h1><p>Como uma altura conhecida pode satisfazer descrições graduais como <b>“baixa”</b>, <b>“média”</b> e <b>“alta”</b>?</p></header>
   <section class="intro" aria-label="Parâmetros da demonstração"><dl>
     <div><dt>Altura h</dt><dd>Uma medida conhecida, em metros. O controle abaixo permite mudar essa medida e observar os graus.</dd></div>
@@ -7,30 +8,132 @@
   </dl></section>
 
 
-<section class="russell-example" aria-labelledby="russell-title"><div><h2 id="russell-title">O exemplo do Russell e Norvig</h2><p>O livro pergunta como interpretar “alto” para uma pessoa de 1,78 m. Para demonstrar o cálculo, adotamos esta definição:</p><ul><li>Até 1,60 m: pertinência 0 a “alta”.</li><li>Entre 1,60 e 1,90 m: crescimento linear.</li><li>A partir de 1,90 m: pertinência 1 a “alta”.</li></ul><p class="height-calculation">μ<sub>alta</sub>({{height|number:'1.2-2'}}) = @if(height > 1.60 && height < 1.90){ {{tallCalculation}} = } <strong>{{tallFocus|number:'1.3-3'}}</strong></p></div><div class="tall-chart"><svg viewBox="0 0 420 215" role="img" aria-label="Pertinência à descrição alta cresce de zero em 1,60 metro a um em 1,90 metro"><path d="M35,30 V170 H385" class="axis"/><path d="M35,100 H385 M35,30 H385" class="grid"/><text x="12" y="34">1</text><text x="0" y="104">0,5</text><text x="14" y="174">0</text><path [attr.d]="tallCurve" class="curve"/><line [attr.x1]="markerX" y1="20" [attr.x2]="markerX" y2="170" class="marker"/><circle [attr.cx]="markerX" [attr.cy]="170-tallFocus*140" r="4" class="point"/><text x="20" y="192">1,40 m</text><text [attr.x]="mapX(1.6)-15" y="192">1,60</text><text [attr.x]="mapX(1.9)-15" y="192">1,90</text><text x="355" y="192">2,10 m</text><text [attr.x]="markerX-14" y="210" class="marker-label">{{height|number:'1.2-2'}}</text></svg><p>O grau descreve a adequação da altura selecionada à palavra “alta” neste modelo.</p></div></section>
+  <section class="russell-example" aria-labelledby="russell-title">
+    <div>
+      <h2 id="russell-title">O exemplo do Russell e Norvig</h2>
+      <p>O livro pergunta como interpretar “alto” para uma pessoa de 1,78 m. Para demonstrar o cálculo, adotamos esta definição:</p>
+      <ul>
+        <li>Até 1,60 m: pertinência 0 a “alta”.</li>
+        <li>Entre 1,60 e 1,90 m: crescimento linear.</li>
+        <li>A partir de 1,90 m: pertinência 1 a “alta”.</li>
+      </ul>
+      <app-math-equation
+        class="height-calculation"
+        [showFunction]="true"
+        setLabel="alta"
+        [height]="height"
+        [term]="tallCalculation"
+        [result]="tallFocus | number:'1.3-3'"
+      />
+    </div>
+    <div class="tall-chart">
+      <svg viewBox="0 0 420 215" role="img" aria-label="Pertinência à descrição alta cresce de zero em 1,60 metro a um em 1,90 metro">
+        <path d="M35,30 V170 H385" class="axis"/>
+        <path d="M35,100 H385 M35,30 H385" class="grid"/>
+        <text x="12" y="34">1</text>
+        <text x="0" y="104">0,5</text>
+        <text x="14" y="174">0</text>
+        <path [attr.d]="tallCurve()" class="curve"/>
+        <line [attr.x1]="markerX" y1="20" [attr.x2]="markerX" y2="170" class="marker"/>
+        <circle [attr.cx]="markerX" [attr.cy]="170 - tallFocus * 140" r="4" class="point"/>
+        <text x="35" y="192">{{ scale.min | number:'1.2-3' }} m</text>
+        @if (mapX(1.90) - mapX(1.60) >= 40) {
+          <text [attr.x]="mapX(1.60)" y="192" text-anchor="middle">1,60</text>
+          <text [attr.x]="mapX(1.90)" y="192" text-anchor="middle">1,90</text>
+        }
+        <text x="385" y="192" text-anchor="end">{{ scale.max | number:'1.2-3' }} m</text>
+        <text [attr.x]="markerX" y="210" text-anchor="middle" class="marker-label">{{ height | number:'1.2-3' }}</text>
+      </svg>
+      <p>O grau descreve a adequação da altura selecionada à palavra “alta” neste modelo.</p>
+    </div>
+  </section>
 
 <section class="height-control" aria-labelledby="height-title">
     <div class="controls-heading">
-      <div class="height-control-heading"><h2 id="height-title">Altura da pessoa</h2><output for="height-slider">{{height|number:'1.2-2'}} <span>m</span></output></div>
+      <div class="height-control-heading"><h2 id="height-title">Altura da pessoa</h2><output for="height-slider">{{height|number:'1.2-3'}} <span>m</span></output></div>
       <div class="set-control"><span id="set-label">Pertencimento desejado</span><mat-button-toggle-group [(ngModel)]="selectedSet" aria-labelledby="set-label" hideSingleSelectionIndicator><mat-button-toggle value="short">Baixa</mat-button-toggle><mat-button-toggle value="medium">Média</mat-button-toggle><mat-button-toggle value="tall">Alta</mat-button-toggle></mat-button-toggle-group></div>
     </div>
 
-    <div class="slider-row"><span>1,40 m</span><mat-slider min="1.4" max="2.1" step="0.01"><input id="height-slider" matSliderThumb [(ngModel)]="height" aria-label="Altura da pessoa, em metros"></mat-slider><span>2,10 m</span></div>
+    <div class="slider-row">
+      <span>{{ scale.min | number:'1.2-3' }} m</span>
+      <mat-slider [min]="scale.min" [max]="scale.max" [step]="scale.step">
+        <input id="height-slider" matSliderThumb [(ngModel)]="height" aria-label="Altura da pessoa, em metros">
+      </mat-slider>
+      <span>{{ scale.max | number:'1.2-3' }} m</span>
+    </div>
   </section>
 
-<section class="comparison" aria-label="Comparação das funções de pertinência"><p class="subtitle">Altura avaliada: <b>{{height|number:'1.2-2'}} m</b>. Pertencimento a <b>estatura {{setLabel}}</b>.</p><div class="function-grid">
-    @for(def of definitions;track def.id){<mat-card appearance="outlined"><mat-card-header><mat-card-title>{{def.name}}</mat-card-title><mat-card-subtitle>{{def.parameters}}</mat-card-subtitle></mat-card-header><mat-card-content><svg viewBox="0 0 420 215" role="img" [attr.aria-label]="'Função '+def.name+' para estatura '+setLabel+', com marcador em '+(height|number:'1.2-2')+' m'"><path d="M35,30 V170 H385" class="axis"/><path d="M35,100 H385 M35,30 H385" class="grid"/><text x="12" y="34">1</text><text x="0" y="104">0,5</text><text x="14" y="174">0</text><path [attr.d]="area(def.id)" class="area"/><path [attr.d]="curve(def.id)" class="curve"/><line [attr.x1]="markerX" y1="20" [attr.x2]="markerX" y2="170" class="marker"/><circle [attr.cx]="markerX" [attr.cy]="170-value(def.id,height)*140" r="4" class="point"/><text x="18" y="192">1,40 m</text><text x="194" y="192">1,75</text><text x="351" y="192">2,10 m</text><text [attr.x]="markerX-14" y="210" class="marker-label">{{height|number:'1.2-2'}}</text></svg><p class="degree">μ<sub>{{setLabel}}</sub>({{height|number:'1.2-2'}}) = <strong>{{formatDegree(value(def.id))}}</strong></p><p class="description">{{def.description}}</p><p class="formula">{{def.formula}}</p></mat-card-content></mat-card>}
-  </div></section>
+  <section class="comparison" aria-label="Comparação das funções de pertinência">
+    <p class="subtitle">
+      Altura avaliada: <b>{{ height | number:'1.2-3' }} m</b>. Pertencimento a <b>estatura {{ setLabel }}</b>.
+      @if (selectedSet() === 'medium' && (training.appliedCenter() !== null || training.fittedRatings() !== null)) {
+        Centro das curvas: <b>{{ training.model().center | number:'1.2-4' }} m</b>.
+      }
+    </p>
+    <div class="function-grid">
+      @for (definition of definitions; track definition.id) {
+        @let degree = value(definition.id);
+        <app-membership-card
+          [definition]="definition"
+          [set]="selectedSet()"
+          [height]="height"
+          [minHeight]="scale.min"
+          [maxHeight]="scale.max"
+          [curve]="curve(definition.id)"
+          [markerX]="markerX"
+          [value]="degree"
+          [degree]="formatDegree(degree)"
+        />
+      }
+    </div>
+  </section>
 
-  <section class="worked" aria-labelledby="worked-title"><h2 id="worked-title">Cálculo da pertinência a estatura {{setLabel}}</h2><div class="table-wrap"><table><thead><tr><th>Função</th><th>Cálculo para h = {{height|number:'1.2-2'}} m</th><th>Pertinência a “{{setLabel}}”</th></tr></thead><tbody>@for(def of definitions;track def.id){<tr><td>{{def.name}}</td><td>{{calculation(def.id)}}</td><td>{{formatDegree(value(def.id))}}</td></tr>}</tbody></table></div></section>
+  <section class="worked" aria-labelledby="worked-title">
+    <h2 id="worked-title">Cálculo da pertinência a estatura {{ setLabel }}</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Função</th>
+            <th scope="col">Cálculo para h = {{ height | number:'1.2-3' }} m</th>
+            <th scope="col">Pertinência a “{{ setLabel }}”</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (definition of definitions; track definition.id) {
+            @let step = calculation(definition.id);
+            <tr>
+              <td>{{ definition.name }}</td>
+              <td>
+                @if (typeof step === 'string') {
+                  {{ step }}
+                } @else {
+                  <app-math-equation [term]="step" />
+                }
+              </td>
+              <td>{{ formatDegree(value(definition.id)) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-  <mat-accordion>
-    <mat-expansion-panel>
-      <mat-expansion-panel-header><mat-panel-title>Como interpretar {{height|number:'1.2-2'}} m como estatura {{setLabel}}?</mat-panel-title></mat-expansion-panel-header>
-      <p class="reading-title"><b>{{reading.title}}</b></p>
-      <p>{{reading.explanation}}</p>
-      <ul class="context-list">@for(def of definitions;track def.id){<li><b>{{def.name}}: {{formatDegree(value(def.id))}}</b><p>{{interpretation(def.id)}}</p></li>}</ul>
-    </mat-expansion-panel>
-  </mat-accordion>
+  <section class="interpretation-panel" aria-labelledby="interpretation-title">
+    @let currentReading = reading;
+    <h2 id="interpretation-title">
+      Como interpretar {{ height | number:'1.2-3' }} m como estatura {{ setLabel }}?
+    </h2>
+    <p class="reading-title"><strong>{{ currentReading.title }}</strong></p>
+    <p>{{ currentReading.explanation }}</p>
+    <ul class="context-list">
+      @for (definition of definitions; track definition.id) {
+        <li>
+          <strong>{{ definition.name }}: {{ formatDegree(value(definition.id)) }}</strong>
+          <p>{{ interpretation(definition.id) }}</p>
+        </li>
+      }
+    </ul>
+  </section>
   <footer><p>Base conceitual: Russell e Norvig, <i>Inteligência artificial</i>, seção 14.7.3. O livro usa a altura de 1,78 m para discutir a descrição “alto”. As funções e os parâmetros numéricos desta demonstração são uma extensão didática.</p><p><a href="https://www.mathworks.com/help/fuzzy/trimf.html" target="_blank" rel="noopener">Fórmula triangular</a><a href="https://www.mathworks.com/help/fuzzy/trapmf.html" target="_blank" rel="noopener">Fórmula trapezoidal</a><a href="https://www.mathworks.com/help/fuzzy/gaussmf.html" target="_blank" rel="noopener">Fórmula gaussiana</a></p></footer>
 </main>

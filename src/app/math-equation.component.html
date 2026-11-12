@@ -1,0 +1,101 @@
+<math display="block">
+  <ng-template #operand let-value>
+    @if (typeof value === 'number') {
+      <mn>{{ value | number:'1.2-4' }}</mn>
+    } @else {
+      <mi>{{ value }}</mi>
+    }
+  </ng-template>
+
+  <ng-template #difference let-values>
+    <mrow>
+      <ng-container *ngTemplateOutlet="operand; context: { $implicit: values[0] }" />
+      <mo>−</mo>
+      <ng-container *ngTemplateOutlet="operand; context: { $implicit: values[1] }" />
+    </mrow>
+  </ng-template>
+
+  <ng-template #expression let-term>
+    @switch (term.kind) {
+      @case ('constant') {
+        <mn>{{ term.value }}</mn>
+      }
+      @case ('fraction') {
+        <mfrac>
+          <ng-container *ngTemplateOutlet="difference; context: { $implicit: term.numerator }" />
+          @if (typeof term.denominator === 'number') {
+            <ng-container *ngTemplateOutlet="operand; context: { $implicit: term.denominator }" />
+          } @else {
+            <ng-container *ngTemplateOutlet="difference; context: { $implicit: term.denominator }" />
+          }
+        </mfrac>
+      }
+      @case ('gaussian') {
+        <mrow>
+          <mi>exp</mi>
+          <mo stretchy="true">(</mo>
+          <mo>−</mo>
+          <mfrac>
+            <msup>
+              <mrow>
+                <mo>(</mo>
+                <ng-container *ngTemplateOutlet="difference; context: { $implicit: [term.height, term.center] }" />
+                <mo>)</mo>
+              </mrow>
+              <mn>2</mn>
+            </msup>
+            <mrow>
+              <mn>2</mn>
+              <mo>×</mo>
+              <msup>
+                <ng-container *ngTemplateOutlet="operand; context: { $implicit: term.sigma }" />
+                <mn>2</mn>
+              </msup>
+            </mrow>
+          </mfrac>
+          <mo stretchy="true">)</mo>
+        </mrow>
+      }
+    }
+  </ng-template>
+
+  <mrow>
+    @if (showFunction()) {
+      @if (setLabel(); as label) {
+        <msub>
+          <mi>μ</mi>
+          <mtext>{{ label }}</mtext>
+        </msub>
+      } @else {
+        <mi>μ</mi>
+      }
+      <mo stretchy="false">(</mo>
+      <ng-container *ngTemplateOutlet="operand; context: { $implicit: height() }" />
+      <mo stretchy="false">)</mo>
+      @if (term() || cases().length > 0) {
+        <mo>=</mo>
+      }
+    }
+
+    @if (cases().length > 0) {
+      <mo stretchy="true">&#123;</mo>
+      <mtable columnalign="left left">
+        @for (branch of cases(); track branch.condition) {
+          <mtr>
+            <mtd><ng-container *ngTemplateOutlet="expression; context: { $implicit: branch.term }" /></mtd>
+            <mtd><mtext class="equation-condition">se {{ branch.condition }}</mtext></mtd>
+          </mtr>
+        }
+      </mtable>
+    } @else if (term(); as currentTerm) {
+      <ng-container *ngTemplateOutlet="expression; context: { $implicit: currentTerm }" />
+    }
+
+    @if (result(); as resultValue) {
+      @if (term() || showFunction()) {
+        <mo>{{ resultValue.startsWith('<') ? '<' : '=' }}</mo>
+      }
+      <mn class="equation-result">{{ resultValue.startsWith('<') ? resultValue.slice(1).trim() : resultValue }}</mn>
+    }
+  </mrow>
+</math>
